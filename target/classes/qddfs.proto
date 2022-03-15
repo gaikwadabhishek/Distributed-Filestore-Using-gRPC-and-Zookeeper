@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package qddfs;
+
+service FileStore {
+    rpc createFile(stream CreateFileRequest) returns (CreateFileReply) {}
+    rpc readFile(stream ReadFileRequest) returns (stream ReadFileReply) {}
+    rpc deleteFile(DeleteFileRequest) returns (DeleteFileReply) {}
+    rpc list(ListRequest) returns (ListReply) {}
+    rpc copyFile(CopyFileRequest) returns (CopyFileReply) {}
+    rpc bumpVersion(BumpVersionRequest) returns (BumpVersionReply) {}
+}
+
+service NameServer {
+    rpc doCreate(NSCreateRequest) returns (NSCreateReply) {}
+    rpc doRead(NSReadRequest) returns (NSReadReply) {}
+    rpc doDelete(NSDeleteRequest) returns (NSDeleteReply) {}
+    rpc list(NSListRequest) returns (NSListReply) {}
+    rpc registerFilesAndTombstones(NSRegisterRequest) returns (NSRegisterReply) {}
+    rpc addFileOrTombstone(NSAddRequest) returns (NSAddReply) {}
+    rpc heartBeat(NSBeatRequest) returns (NSBeatReply) {}
+}
+
+message ListRequest {
+}
+
+message ListReply {
+    repeated FSEntry entries = 1;
+}
+
+message CopyFileRequest {
+    string name = 1;
+    repeated string hostPort = 2; /* list of files to copy file from */
+}
+
+message CopyFileReply {
+    int32 rc = 1; /* 0 - success NOTE: this function may return before the copy takes place */
+}
+
+message BumpVersionRequest {
+    repeated string name = 1; /* list of files to bump. file is ignored if FileStore has a newer version */
+    int32 newVersion = 2;
+}
+
+message BumpVersionReply {
+}
+
+message NSCreateRequest {
+    string name = 1;
+}
+
+message NSCreateReply {
+    int32 rc = 1; /* 0 success, 2 not active nameserver */
+    repeated string hostPort = 2; /* the list of host ports of FileStores to use to create file */
+    int32 version = 3; /* the version to use when creating files on the FileStores */
+}
+
+message NSReadRequest {
+    string name = 1;
+}
+
+message NSReadReply {
+    int32 rc = 1; /* 0 success, 1 file not found, 2 not active nameserver */
+    repeated string hostPort = 2; /* the list of host ports of FileStores that have the file */
+}
+
+message NSDeleteRequest {
+    string name = 1;
+}
+
+message NSDeleteReply {
+    int32 rc = 1; /* 0 success, 1 doesn't exist, 2 not active nameserver */
+}
+
+message NSListRequest {
+    string pattern = 1; /* a regular expression for files to list. must support the * and + operator. also [] and [^]. */
+}
+
+message NSListReply {
+    int32 rc = 1; /* 0 success, 2 another error occurred */
+    repeated NSNameEntry entries = 2; /* includes only files. no tombstones */
+}
+
+message NSNameEntry {
+    string name = 1;
+    int32 version = 2;
+    int64 size = 3;
+}
+
+message NSRegisterRequest {
+    repeated FSEntry entries = 1;
+    int64 bytesUsed = 2;
+    int64 bytesAvailable = 3;
+    string hostPort = 4; /* the hostPort of the FileStore service */
+}
+
+message FSEntry {
+    string name = 1;
+    int32 version = 2;
+    int64 size = 3;
+    bool isTombstone = 4;
+}
+
+message NSRegisterReply {
+    int32 rc = 1; /* 0 success, 1 not active NameServer */
+}
+
+message NSAddRequest {
+    FSEntry entry = 1;
+    string hostPort = 2; /* the hostPort of the FileStore service */
+}
+
+message NSAddReply {
+    int32 rc = 1; /* 0 success, 1 not active NameServer */
+}
+
+message NSBeatRequest {
+    int64 bytesUsed = 1;
+    int64 bytesAvailable = 2;
+    string hostPort = 3; /* the hostPort of the FileStore service */
+}
+
+message NSBeatReply {
+    int32 rc = 1; /* 0 success, 1 not active NameServer */
+}
+
+message DeleteFileRequest {
+    string name = 1; /* note a delete may succeed even if the file doesn't exist */
+    int32 version = 2;
+}
+
+message DeleteFileReply {
+    int32 rc = 1; /* 0 success, 1 version too old, 2 another error occurred */
+    string message = 2;
+}
+
+message FileCreate {
+    string name = 1;
+    int32 version = 2;
+    repeated string chain = 3; /* the list of servers to replicate to */
+}
+
+message FileRead {
+    string name = 1;
+}
+
+message ReadRequest {
+    int64 offset = 1;
+    int32 length = 2;
+}
+
+message FileData {
+    int64 offset = 1;
+    bytes data = 2;
+}
+
+message FileClose {
+}
+
+message CreateFileRequest {
+    oneof request {
+        FileCreate create = 1; /* must be first message */
+        FileData data = 2;
+        FileClose close = 3; /* must be last message */
+    }
+}
+
+message CreateFileReply {
+    int32 rc = 1; /* 0 success, 1 version too old, 2 another error occurred */
+    string message = 2;
+}
+
+message ReadFileRequest {
+    oneof request {
+        FileRead read = 1; /* must be first message */
+        ReadRequest req = 2;
+        FileClose close = 3; /* must be last message */
+    }
+}
+
+message ReadFileReply {
+    oneof reply {
+        OpenResult open = 1; /* must be first message */
+        FileData data = 2;
+        ErrorResult error = 3; /* can happen at any time, but usually should not happen */
+    }
+}
+
+message OpenResult {
+    int32 rc = 1; /* 0 success, 1 file deleted, 2 another error occurred */
+    int32 version = 2; /* version number of existing or deleted file or -1 */
+    string error = 3; /* error message */
+    int64 length = 4; /* length of the file, -1 on error */
+}
+
+message ErrorResult {
+    int32 rc = 1; /* should not be 0 */
+    string error = 2;
+}
